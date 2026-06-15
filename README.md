@@ -134,10 +134,10 @@ Lệnh train:
 
 ```bash
 python train.py \
-  --train_data /kaggle/input/datasets/trandthang/final-public/public/annotations/train.json \
-  --val_data /kaggle/input/datasets/trandthang/final-public/public/annotations/val.json \
-  --image_dir /kaggle/input/datasets/trandthang/final-public/public/train/images \
-  --val_image_dir /kaggle/input/datasets/trandthang/final-public/public/val/images \
+  --train_data ./public/annotations/train.json \
+  --val_data ./public/annotations/val.json \
+  --image_dir ./public/train/images \
+  --val_image_dir ./public/val/images \
   --checkpoint_dir ./models/ \
   --img_size 640 \
   --multi_scale_min 640 \
@@ -153,7 +153,7 @@ python train.py \
 Mặc định train:
 
 - `img_size=640`
-- fixed scale `640`
+- `fixed scale=640`
 - `epochs=16`
 - `channels=128`
 - `scheduler=onecycle`
@@ -171,9 +171,9 @@ Lệnh predict:
 
 ```bash
 python predict.py \
-  --image_dir /kaggle/input/datasets/trandoanthang/final-public/public/val/images \
+  --image_dir ./public/val/images \
   --output ./val_predictions.json \
-  --checkpoint /kaggle/input/models/trandoanthang/best/pytorch/default/1/best.pth 
+  --checkpoint ./models/best.pth 
 ```
 
 Mặc định:
@@ -184,10 +184,10 @@ Mặc định:
 - Co the doi link tai bang `--checkpoint_url`.
 - `--conf_threshold 0.01`
 - `--max_detections_per_image 300`
-- `--nms_threshold 0.6 `
-- `--wbf_iou_threshold 0.55 `
-- `--tta_img_sizes 640 512 704 `
-- `--tta_brightness 0.9 1.1 `
+- `--nms_threshold 0.6`
+- `--wbf_iou_threshold 0.55`
+- `--tta_img_sizes 640 512 704`
+- `--tta_brightness 0.9 1.1`
 
 - TTA flip ngang và điều chỉnh độ sáng được bật mặc định.
 - Mặc định suy luận bằng multi-scale TTA với các kích thước: `640`, `512`, và `704`.
@@ -233,8 +233,8 @@ NMS được cài đặt trong `utils/nms.py` và được chạy riêng theo t�
 ## Evaluate
 
 ```bash
-!python /kaggle/input/datasets/trandoanthang/final-public/public/tools/evaluate_predictions.py \
-  --ground_truth /kaggle/input/datasets/trandoanthang/final-public/public/annotations/val.json \
+python ./public/tools/evaluate_predictions.py \
+  --ground_truth ./public/annotations/val.json \
   --predictions ./val_predictions.json \
   --output ./val_score.json
 ```
