@@ -25,7 +25,7 @@ LETTERBOX_FILL = (114, 114, 114)
 TTA_IMAGE_SIZES: list[int] = [640, 512, 704]
 PROJECT_DIR = Path(__file__).resolve().parent
 DEFAULT_CHECKPOINT = PROJECT_DIR / "models" / "best.pth"
-DEFAULT_CHECKPOINT_URL = "https://drive.google.com/file/d/1ub2AicWIkYZNLvyCZKrQOVTwOtgrb6J2/view?usp=sharing"
+DEFAULT_CHECKPOINT_URL = "https://github.com/thangtrandoan/submission/releases/download/latest/best.pth"
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 
 
@@ -52,64 +52,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def google_drive_download_url(url: str) -> str:
-    match = re.search(r"/file/d/([^/]+)", url)
-    if match:
-        file_id = match.group(1)
-    else:
-        parsed = urllib.parse.urlparse(url)
-        query = urllib.parse.parse_qs(parsed.query)
-        file_id = query.get("id", [""])[0]
-    if not file_id:
-        return url
-    return f"https://drive.google.com/uc?export=download&id={file_id}"
-
-
-def confirm_google_drive_download(response: object) -> tuple[str | None, bool]:
-    for value in response.headers.get_all("Set-Cookie") or []:
-        match = re.search(r"download_warning[^=]*=([^;]+)", value)
-        if match:
-            return match.group(1), False
-
-    content_type = response.headers.get("Content-Type", "")
-    if "text/html" not in content_type:
-        return None, False
-    preview = response.read(200_000).decode("utf-8", errors="ignore")
-    patterns = [
-        r"confirm=([0-9A-Za-z_-]+)",
-        r'name="confirm"\s+value="([^"]+)"',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, preview)
-        if match:
-            return match.group(1), False
-    return None, True
-
-
 def download_file(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temp_path = destination.with_suffix(destination.suffix + ".download")
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
-    request_url = google_drive_download_url(url)
     headers = {"User-Agent": "Mozilla/5.0"}
+    req = urllib.request.Request(url, headers=headers)
 
     try:
-        response = opener.open(urllib.request.Request(request_url, headers=headers))
-        confirm, is_unhandled_html = confirm_google_drive_download(response)
-        if is_unhandled_html:
-            response.close()
-            raise RuntimeError("Google Drive returned an HTML page instead of the checkpoint file.")
-        if confirm:
-            response.close()
-            parsed = urllib.parse.urlparse(request_url)
-            query = urllib.parse.parse_qs(parsed.query)
-            query["confirm"] = [confirm]
-            request_url = urllib.parse.urlunparse(
-                parsed._replace(query=urllib.parse.urlencode(query, doseq=True))
-            )
-            response = opener.open(urllib.request.Request(request_url, headers=headers))
-
-        with response, temp_path.open("wb") as file:
+        with urllib.request.urlopen(req) as response, temp_path.open("wb") as file:
             while True:
                 chunk = response.read(DOWNLOAD_CHUNK_SIZE)
                 if not chunk:
