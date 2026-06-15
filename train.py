@@ -422,6 +422,7 @@ def save_checkpoint(
     channels: int,
     use_bifpn: bool,
     ema: ModelEMA | None = None,
+    scaler: torch.amp.GradScaler | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     model_to_save = unwrap_model(model)
@@ -430,6 +431,7 @@ def save_checkpoint(
             "model_state_dict": model_to_save.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
+            "scaler_state_dict": scaler.state_dict() if scaler is not None else None,
             "ema_state_dict": ema.state_dict() if ema is not None else None,
             "ema_updates": ema.num_updates if ema is not None else 0,
             "ema_decay": ema.decay if ema is not None else None,
@@ -456,8 +458,6 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
     args = parse_args()
-    random.seed(args.seed)
-    torch.manual_seed(args.seed)
     device = torch.device(args.device)
     use_p2 = args.enable_p2 and not args.disable_p2
     use_p6 = not args.disable_p6 and not use_p2
@@ -470,7 +470,6 @@ def main() -> None:
     else:
         model_type = MODEL_TYPE_BASE
     if device.type == "cuda":
-        torch.cuda.manual_seed_all(args.seed)
         torch.backends.cudnn.benchmark = True
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
@@ -487,10 +486,12 @@ def main() -> None:
     if resume_option_count > 1:
         raise ValueError("Use only one of --resume_from_best, --resume_from_last, or --resume_checkpoint.")
     checkpoint = None
+    start_epoch = 1
     if resume_path is not None:
         if not resume_path.exists():
             raise FileNotFoundError(f"Resume checkpoint not found: {resume_path}")
         checkpoint = torch.load(resume_path, map_location=device)
+        start_epoch = int(checkpoint.get("epoch", 0)) + 1
         checkpoint_model_type = checkpoint.get("model_type")
         if checkpoint_model_type != model_type:
             raise ValueError(
@@ -507,6 +508,12 @@ def main() -> None:
                 "Weights are compatible, but a fresh run is usually cleaner.",
                 flush=True,
             )
+
+    current_seed = args.seed + start_epoch - 1
+    random.seed(current_seed)
+    torch.manual_seed(current_seed)
+    if device.type == "cuda":
+        torch.cuda.manual_seed_all(current_seed)
 
     train_dataset = ObjectDetectionDataset(args.train_data, args.image_dir, img_size=args.img_size, train=True)
     val_dataset = ObjectDetectionDataset(args.val_data, args.val_image_dir, img_size=args.img_size, train=False)
@@ -598,7 +605,6 @@ def main() -> None:
         )
     scaler = torch.amp.GradScaler(device.type, enabled=use_amp)
 
-    start_epoch = 1
     best_val_loss = float("inf")
     best_map = float("-inf")
     epochs_without_improvement = 0
@@ -607,7 +613,8 @@ def main() -> None:
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if "scheduler_state_dict" in checkpoint:
             scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        start_epoch = int(checkpoint.get("epoch", 0)) + 1
+        if "scaler_state_dict" in checkpoint and checkpoint["scaler_state_dict"] is not None:
+            scaler.load_state_dict(checkpoint["scaler_state_dict"])
         best_val_loss = float(checkpoint.get("best_val_loss", float("inf")))
         best_map = float(checkpoint.get("best_metric", float("-inf")))
         print(
@@ -661,7 +668,7 @@ def main() -> None:
         f"last_checkpoint={last_path}",
         flush=True,
     )
-    end_epoch = start_epoch + args.epochs - 1
+    end_epoch = args.epochs
     for epoch in range(start_epoch, end_epoch + 1):
         epoch_start_time = time.perf_counter()
         current_img_size = random.choice(multi_scale_sizes)
@@ -726,30 +733,33 @@ def main() -> None:
                     best_val_loss = val_loss
                     best_map = map_metrics["map_50"]
                     epochs_without_improvement = 0
-                    save_checkpoint(
-                        best_path,
-                        model,
-                        optimizer,
-                        scheduler,
-                        train_dataset.class_names,
-                        args.img_size,
-                        args.img_size // 32,
-                        epoch,
-                        best_val_loss,
-                        best_metric=best_map,
-                        model_type=model_type,
-                        use_p2=use_p2,
-                        use_p6=use_p6,
-                        use_scales=use_scales,
-                        channels=args.channels,
-                        use_bifpn=use_bifpn,
-                        ema=ema,
-                    )
                 else:
                     epochs_without_improvement += 1
             finally:
                 if ema is not None:
                     ema.restore(model)
+
+            if improved:
+                save_checkpoint(
+                    best_path,
+                    model,
+                    optimizer,
+                    scheduler,
+                    train_dataset.class_names,
+                    args.img_size,
+                    args.img_size // 32,
+                    epoch,
+                    best_val_loss,
+                    best_metric=best_map,
+                    model_type=model_type,
+                    use_p2=use_p2,
+                    use_p6=use_p6,
+                    use_scales=use_scales,
+                    channels=args.channels,
+                    use_bifpn=use_bifpn,
+                    ema=ema,
+                    scaler=scaler,
+                )
         else:
             current_lr = optimizer.param_groups[0]["lr"]
 
@@ -771,6 +781,7 @@ def main() -> None:
             channels=args.channels,
             use_bifpn=use_bifpn,
             ema=ema,
+            scaler=scaler,
         )
 
         message = (
