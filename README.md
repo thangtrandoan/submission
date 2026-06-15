@@ -180,7 +180,7 @@ Mặc định:
 
 - `--checkpoint ./models/best.pth`
 - Neu checkpoint chua ton tai, `predict.py` se tu tai weight ve duong dan nay.
-- Link weight mac dinh: `https://drive.google.com/file/d/1ub2AicWIkYZNLvyCZKrQOVTwOtgrb6J2/view?usp=sharing`
+- Link weight mac dinh: `https://github.com/thangtrandoan/submission/releases/download/latest/best.pth`
 - Co the doi link tai bang `--checkpoint_url`.
 - `--conf_threshold 0.01`
 - `--max_detections_per_image 300`
